@@ -12,14 +12,15 @@
  */
 
  /*
- * bitAnd - x & y using only ~ and |
- * Example: bitAnd(4, 5) = 4
- * Legal ops: ~ |
- * Max ops: 7
- * Difficulty: 1
- */
+  * bitAnd - x & y using only ~ and |
+  * Example: bitAnd(4, 5) = 4
+  * Legal ops: ~ |
+  * Max ops: 7
+  * Difficulty: 1
+  */
 int bitAnd(int x, int y) {
-    return 2;
+    /* De Morgan: x & y == ~(~x | ~y) */
+    return ~(~x | ~y);
 }
 
 /*
@@ -30,7 +31,8 @@ int bitAnd(int x, int y) {
  *   Difficulty: 1
  */
 int bitXor(int x, int y) {
-    return 2;
+    /* x ^ y == (x | y) & ~(x & y), and x | y == ~(~x & ~y) */
+    return ~(~x & ~y) & ~(x & y);
 }
 
 /*
@@ -50,7 +52,27 @@ int bitXor(int x, int y) {
  *   1 if x and y have the same sign , 0 otherwise.
  */
 int samesign(int x, int y) {
-    return 2;
+    /* x >> 31 is 0 for x >= 0 and -1 for x < 0, so the sign bits are
+     * exactly the two lowest bits of sx and sy. */
+    int sx = x >> 31;
+    int sy = y >> 31;
+
+    if (sx ^ sy) {
+        return 0; /* one non-negative, the other negative */
+    }
+    if (sx) {
+        return 1; /* both negative */
+    }
+    if (x) {
+        if (y) {
+            return 1; /* both positive */
+        }
+        return 0; /* x > 0, y == 0 */
+    }
+    if (y) {
+        return 0; /* x == 0, y != 0 */
+    }
+    return 1; /* both zero */
 }
 
 /*
@@ -63,7 +85,26 @@ int samesign(int x, int y) {
  *   Difficulty: 4
  */
 int logtwo(int v) {
-    return 2;
+    int r = 0;
+    int s;
+
+    /* Standard binary search for floor(log2(v)).  Every step produces its
+     * own shift amount s by comparing the remaining value with a bound, so
+     * no control flow is needed. */
+    s = (v > 0xFFFF) << 4;
+    v = v >> s;
+    r = r | s;
+    s = (v > 0xFF) << 3;
+    v = v >> s;
+    r = r | s;
+    s = (v > 0xF) << 2;
+    v = v >> s;
+    r = r | s;
+    s = (v > 0x3) << 1;
+    v = v >> s;
+    r = r | s;
+    r = r | (v > 1);
+    return r;
 }
 
 /*
@@ -76,7 +117,18 @@ int logtwo(int v) {
  *    Difficulty: 2
  */
 int byteSwap(int x, int n, int m) {
-    return 2;
+    int nshift = n << 3;
+    int mshift = m << 3;
+    int nbyte, mbyte, diff, mask;
+
+    /* Extract both bytes, then XOR the two positions with the difference of
+     * the bytes: the bits of the two bytes are exactly the bits that have to
+     * be flipped. */
+    nbyte = (x >> nshift) & 0xFF;
+    mbyte = (x >> mshift) & 0xFF;
+    diff = nbyte ^ mbyte;
+    mask = (diff << nshift) | (diff << mshift);
+    return x ^ mask;
 }
 
 /*
@@ -88,7 +140,16 @@ int byteSwap(int x, int n, int m) {
  *   Difficulty: 3
  */
 unsigned reverse(unsigned v) {
-    return 2;
+    unsigned r = 0;
+    int i = 32;
+
+    /* Peel one bit off the right of v and push it onto the left of r. */
+    while (i) {
+        r = (r << 1) | (v & 1);
+        v = v >> 1;
+        i = i - 1;
+    }
+    return r;
 }
 
 /*
@@ -100,7 +161,16 @@ unsigned reverse(unsigned v) {
  *   Difficulty: 3
  */
 int logicalShift(int x, int n) {
-    return 2;
+    int low, fixup;
+
+    /* low = mask of the low (32 - n) bits, built with positive shifts only:
+     * (n + 31) & 31 equals n - 1 for n >= 1 and 31 for n == 0. */
+    low = 0x7FFFFFFF >> ((n + 31) & 31);
+    /* For n == 0 all 32 bits must be kept, but low is then 0.  In that case
+     * low - 1 is -1 and (low - 1) >> 31 is an all-ones mask; for every
+     * n >= 1, low >= 1 so (low - 1) >> 31 is 0. */
+    fixup = (low + ~0) >> 31;
+    return (x >> n) & (low | fixup);
 }
 
 /*
@@ -112,7 +182,37 @@ int logicalShift(int x, int n) {
  *   Difficulty: 4
  */
 int leftBitCount(int x) {
-    return 2;
+    int cnt = 0;
+    int w;
+
+    /* Binary search: cnt is the number of leading ones already proven.
+     * The next chunk of c bits sits at offset 32 - cnt - c, i.e. at
+     * ~cnt + (33 - c).  Shifting right arithmetically keeps the low bits of
+     * the chunk intact, so it can be tested with a mask. */
+
+    /* chunk of 16 bits (offset is the constant 16 while cnt == 0) */
+    w = x >> 16;
+    cnt = cnt + ((!((w + 1) & 0xFFFF)) << 4);
+
+    /* chunk of 8 bits, offset = 24 - cnt */
+    w = x >> (~cnt + 25);
+    cnt = cnt + ((!((w + 1) & 0xFF)) << 3);
+
+    /* chunk of 4 bits, offset = 28 - cnt */
+    w = x >> (~cnt + 29);
+    cnt = cnt + ((!((w + 1) & 0xF)) << 2);
+
+    /* chunk of 2 bits, offset = 30 - cnt */
+    w = x >> (~cnt + 31);
+    cnt = cnt + ((!((w + 1) & 0x3)) << 1);
+
+    /* Final 2 bits (bits 1 and 0 when the first 30 bits were all ones).
+     * (w >> 1) + (w & (w >> 1)) is the number of leading ones of the 2-bit
+     * window w, and it is 0 whenever the window contains the first zero. */
+    w = (x >> (~cnt + 31)) & 0x3;
+    cnt = cnt + ((w >> 1) + (w & (w >> 1)));
+
+    return cnt;
 }
 
 /*
@@ -124,7 +224,51 @@ int leftBitCount(int x) {
  *   Difficulty: 4
  */
 unsigned float_i2f(int x) {
-    return 2;
+    unsigned ux = x;
+    unsigned sign, mag, frac, rem, half, shift;
+    unsigned t;
+    int e = 0;
+
+    if (x == 0) {
+        return 0;
+    }
+    sign = ux & 0x80000000;
+    if (x < 0) {
+        mag = -ux; /* unsigned negation, well defined for 0x80000000 */
+    } else {
+        mag = ux;
+    }
+
+    /* e = floor(log2(mag)): shift mag down until only the leading 1 is left.
+     * e starts at 0, so logtwo(1) == 0 is handled without a special case. */
+    t = mag;
+    while (t >>= 1) {
+        e = e + 1;
+    }
+
+    if (e > 23) {
+        /* Some bits are shifted out, so round to nearest, ties to even. */
+        shift = e - 23;
+        frac = mag >> shift;
+        rem = mag & ((1 << shift) - 1); /* the bits that are dropped */
+        half = 1 << (shift - 1);        /* 0.5 ulp */
+        if (rem > half) {
+            frac = frac + 1;
+        } else if (rem == half) {
+            if (frac & 1) {
+                frac = frac + 1; /* tie: round up only to an even mantissa */
+            }
+        }
+        if (frac >> 24) {
+            /* mantissa overflowed, e.g. 0xFFFFFF rounded up to 0x1000000 */
+            frac = frac >> 1;
+            e = e + 1;
+        }
+    } else {
+        frac = mag << (23 - e); /* exact, no rounding needed */
+    }
+    frac = frac & 0x7FFFFF; /* drop the implicit leading 1 */
+    return sign | ((e + 127) << 23) | frac;
 }
 
 /*
@@ -139,7 +283,26 @@ unsigned float_i2f(int x) {
  *   Difficulty: 4
  */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    unsigned exp = (uf >> 23) & 0xFF;
+    unsigned sign = uf & 0x80000000;
+    unsigned frac = uf & 0x7FFFFF;
+
+    if (exp == 0xFF) {
+        return uf; /* inf and NaN are unchanged (2*inf == inf) */
+    }
+    if (exp == 0) {
+        /* zero or denormal: doubling is a left shift of the fraction */
+        if (frac >> 22) {
+            /* the fraction becomes normal: exponent field 1, leading 1 dropped */
+            return sign | 0x00800000 | ((frac << 1) & 0x7FFFFF);
+        }
+        return sign | (frac << 1);
+    }
+    exp = exp + 1;
+    if (exp == 0xFF) {
+        return sign | 0x7F800000; /* overflow to +-inf */
+    }
+    return sign | (exp << 23) | frac;
 }
 
 /*
@@ -156,7 +319,34 @@ unsigned floatScale2(unsigned uf) {
  *   Difficulty: 3
  */
 int float64_f2i(unsigned uf1, unsigned uf2) {
-    return 2;
+    unsigned sign = uf2 >> 31;
+    unsigned exp = (uf2 >> 20) & 0x7FF;
+    unsigned val, shift;
+
+    /* |value| < 1 (including all denormals): truncation gives 0 */
+    if (exp < 1023) {
+        return 0;
+    }
+    /* |value| >= 2^31 (including inf and NaN): overflow */
+    if (exp > 1054) {
+        return 0x80000000;
+    }
+    /* val holds the (mantissa + implicit 1) bits, aligned so that
+     * val >> (1054 - exp) is the truncated magnitude. */
+    val = 0x80000000 | ((uf2 & 0xFFFFF) << 11) | (uf1 >> 21);
+    shift = 1054 - exp;
+    val = val >> shift;
+
+    if (sign) {
+        if (val > 0x80000000) {
+            return 0x80000000; /* -(val) does not fit in an int */
+        }
+        return -val; /* covers -2^31 as well */
+    }
+    if (val > 0x7FFFFFFF) {
+        return 0x80000000;
+    }
+    return val;
 }
 
 /*
@@ -173,5 +363,16 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
  *   Difficulty: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    /* Normal numbers need a biased exponent in [1, 254], i.e. x in [-126, 127] */
+    if (x > 127) {
+        return 0x7F800000; /* +INF */
+    }
+    if (x < -126) {
+        if (x < -149) {
+            return 0; /* smaller than the smallest denormal 2^-149 */
+        }
+        /* denormal: 2^x == 1 << (x + 149), with x + 149 in [0, 22] */
+        return 1 << (x + 149);
+    }
+    return (x + 127) << 23;
 }
